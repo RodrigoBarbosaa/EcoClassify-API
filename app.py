@@ -81,13 +81,9 @@ async def startup_event():
 #templates = Jinja2Templates(directory="templates")
 
 # Rota principal para a página de teste
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 async def root():
-    return {
-        "message": "Garbage Classification API",
-        "status": "running",
-        "model_loaded": model is not None
-    }
+    return {"message": "API de Classificação de Lixo está no ar. Use o endpoint /predict para enviar imagens."}
     #return templates.TemplateResponse("index.html", {"request": request})
 
 # Endpoint para o frontend
