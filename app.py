@@ -1,4 +1,6 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 import numpy as np
 import tensorflow as tf
@@ -10,157 +12,121 @@ import logging
 from typing import List
 import uvicorn
 
-# lidar com app e rotas
-
 # Configuração de logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Configuração da aplicação
 app = FastAPI(
-    title="Image Classification API",
-    description="API para classificação de imagens usando modelo Keras",
+    title="Garbage Classification API",
+    description="API para classificar imagens de lixo usando um modelo Keras pré-treinado",
     version="1.0.0"
 )
 
 # Modelo de dados para entrada
 class ImageRequest(BaseModel):
-    image_data: str  # Base64 encoded image
-    image_format: str = "PNG"  # Formato da imagem (PNG, JPEG, etc.)
+    image_data: str  # Imagem codificada em Base64
 
 # Modelo de dados para saída
 class PredictionResponse(BaseModel):
-    predictions: List[float]
-    predicted_class: int
+    predicted_class: str
     confidence: float
+    all_predictions: dict  # Para incluir todas as probabilidades
 
-# Variável global para o modelo
+# Variável global para o modelo e outras configurações
 model = None
-INPUT_SHAPE = (28, 28, 1)  # Exemplo: MNIST shape
-NUM_CLASSES = 10
+IMG_SIZE = (224, 224)
+class_names = ['cardboard', 'glass', 'metal', 'paper', 'plastic', 'trash']
 
-def load_model(model_path: str = "model.keras"):
+def load_model(model_path: str = "waste_classifier_mobilenetv2.keras"):
     global model
     try:
         model = keras.models.load_model(model_path)
         logger.info(f"Modelo carregado com sucesso: {model_path}")
         return True
     except Exception as e:
-        logger.error(f"Erro ao carregar modelo: {e}")
+        logger.error(f"Erro ao carregar o modelo: {e}")
         return False
 
 def preprocess_image(image_data: str) -> np.ndarray:
+   
     try:
-        # Decodifica base64
+        # Decodifica a string base64 para bytes
         image_bytes = base64.b64decode(image_data)
         
-        # Converte para PIL Image
-        image = Image.open(io.BytesIO(image_bytes))
-        
-        # Converte para escala de cinza se necessário
-        if image.mode != 'L':
-            image = image.convert('L')
+        # Converte para um objeto PIL Image e garante o formato RGB
+        image = Image.open(io.BytesIO(image_bytes)).convert('RGB')
         
         # Redimensiona para o tamanho esperado pelo modelo
-        image = image.resize((INPUT_SHAPE[0], INPUT_SHAPE[1]))
+        image = image.resize(IMG_SIZE)
         
-        # Converte para array numpy
+        # Converte para um array numpy. Os valores dos pixels estarão em [0, 255]
         image_array = np.array(image)
         
-        # Normaliza valores para 0-1
-        image_array = image_array.astype(np.float32) / 255.0
-        
-        # Adiciona dimensão do batch e canal se necessário
-        if len(image_array.shape) == 2:
-            image_array = np.expand_dims(image_array, axis=-1)
+        # Adiciona a dimensão do batch para que o shape seja (1, 224, 224, 3)
         image_array = np.expand_dims(image_array, axis=0)
-        
+
         return image_array
         
     except Exception as e:
-        logger.error(f"Erro no preprocessamento da imagem: {e}")
+        logger.error(f"Erro no pré-processamento da imagem: {e}")
         raise HTTPException(status_code=400, detail=f"Erro no processamento da imagem: {str(e)}")
 
-# carrega o modelo
+# Rota de inicialização
 @app.on_event("startup")
 async def startup_event():
-    success = load_model()
-    if not success:
-        logger.warning("Modelo não foi carregado. Tentando criar modelo de exemplo...")
-        create_example_model()
+    load_model()
 
-# chamar para ligar o render
-@app.get("/")
-async def root():
+# Crie uma instância de Jinja2Templates
+templates = Jinja2Templates(directory="templates")
+
+# Rota principal para a página de teste
+@app.get("/", response_class=HTMLResponse)
+async def root(request: Request):
     return {
-        "message": "Image Classification API",
+        "message": "Garbage Classification API",
         "status": "running",
         "model_loaded": model is not None
     }
+    #return templates.TemplateResponse("index.html", {"request": request})
 
-# endpoint pro frontend
+# Endpoint para o frontend
 @app.post("/predict", response_model=PredictionResponse)
 async def predict(request: ImageRequest):
-    if not model:
-        create_example_model() #TODO: remover essa linha em prod
-    
     if model is None:
-        raise HTTPException(status_code=503, detail="Modelo não carregado")
+        raise HTTPException(status_code=503, detail="Modelo não carregado.")
     
     try:
-        # Preprocessa a imagem
+        # Pré-processa a imagem
         processed_image = preprocess_image(request.image_data)
         
         # Faz a predição
         predictions = model.predict(processed_image)
         predictions_list = predictions[0].tolist()
         
-        # Encontra a classe predita e confiança
-        predicted_class = int(np.argmax(predictions[0]))
+        # Encontra a classe predita e sua confiança
+        predicted_class_index = int(np.argmax(predictions[0]))
+        predicted_class_name = class_names[predicted_class_index]
         confidence = float(np.max(predictions[0]))
         
-        logger.info(f"Predição realizada: classe={predicted_class}, confiança={confidence:.4f}")
+        # Mapeia todas as probabilidades para nomes de classes
+        all_predictions_dict = {
+            class_name: prob for class_name, prob in zip(class_names, predictions_list)
+        }
+        
+        logger.info(f"Predição realizada: classe={predicted_class_name}, confiança={confidence:.4f}")
         
         return PredictionResponse(
-            predictions=predictions_list,
-            predicted_class=predicted_class,
-            confidence=confidence
+            predicted_class=predicted_class_name,
+            confidence=confidence,
+            all_predictions=all_predictions_dict
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Erro na predição: {e}")
         raise HTTPException(status_code=500, detail=f"Erro na predição: {str(e)}")
-
-
-# Modelo para teste
-def create_example_model():
-    global model
-    
-    try:
-        # Modelo simples para classificação MNIST-like
-        model = keras.Sequential([
-            keras.layers.Conv2D(32, (3, 3), activation='relu', input_shape=INPUT_SHAPE),
-            keras.layers.MaxPooling2D((2, 2)),
-            keras.layers.Conv2D(64, (3, 3), activation='relu'),
-            keras.layers.MaxPooling2D((2, 2)),
-            keras.layers.Flatten(),
-            keras.layers.Dense(64, activation='relu'),
-            keras.layers.Dropout(0.5),
-            keras.layers.Dense(NUM_CLASSES, activation='softmax')
-        ])
-        
-        model.compile(
-            optimizer='adam',
-            loss='sparse_categorical_crossentropy',
-            metrics=['accuracy']
-        )
-        
-        # Salva o modelo
-        model.save("model.keras")
-        logger.info("Modelo de exemplo criado e salvo como 'model.keras'")
-        
-    except Exception as e:
-        logger.error(f"Erro ao criar modelo de exemplo: {e}")
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
