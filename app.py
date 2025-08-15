@@ -82,7 +82,7 @@ async def startup_event():
 
 # Rota principal para a página de teste
 @app.get("/", response_class=HTMLResponse)
-async def root(request: Request):
+async def root():
     return {
         "message": "Garbage Classification API",
         "status": "running",
