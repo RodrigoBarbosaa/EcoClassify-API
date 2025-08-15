@@ -27,7 +27,7 @@ app = FastAPI(
 
 origins = [
     "http://localhost:8000",
-    "https://eco-scan-app.lovable.app/"
+    "https://eco-scan-app.lovable.app"
 ]
 
 app.add_middleware(
