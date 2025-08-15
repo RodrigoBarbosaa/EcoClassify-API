@@ -10,6 +10,8 @@ from PIL import Image
 import logging
 from typing import List
 import uvicorn
+from fastapi.middleware.cors import CORSMiddleware
+
 #from fastapi.templating import Jinja2Templates
 
 # Configuração de logging
@@ -21,6 +23,19 @@ app = FastAPI(
     title="Garbage Classification API",
     description="API para classificar imagens de lixo usando um modelo Keras pré-treinado",
     version="1.0.0"
+)
+
+origins = [
+    "http://localhost:8000",
+    "https://eco-scan-app.lovable.app/"
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "OPTIONS"], # Especificar ou usar ["*"]
+    allow_headers=["*"],
 )
 
 # Modelo de dados para entrada
