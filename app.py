@@ -1,6 +1,5 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 import numpy as np
 import tensorflow as tf
@@ -11,6 +10,7 @@ from PIL import Image
 import logging
 from typing import List
 import uvicorn
+#from fastapi.templating import Jinja2Templates
 
 # Configuração de logging
 logging.basicConfig(level=logging.INFO)
@@ -78,7 +78,7 @@ async def startup_event():
     load_model()
 
 # Crie uma instância de Jinja2Templates
-templates = Jinja2Templates(directory="templates")
+#templates = Jinja2Templates(directory="templates")
 
 # Rota principal para a página de teste
 @app.get("/", response_class=HTMLResponse)
